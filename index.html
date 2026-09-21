@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Suivi Natation — Équipe</title>
+<style>
+  :root {
+    --bg: #F4FAFA;
+    --surface: #FFFFFF;
+    --surface-2: #E9F3F3;
+    --ink: #0B2530;
+    --ink-dim: #52707A;
+    --line: #D3E4E4;
+    --teal: #12707E;
+    --teal-deep: #0A4A55;
+    --amber: #F2B134;
+    --coral: #E2725B;
+    --radius: 10px;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); height: 100%; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0A1F26; --surface: #0F2A32; --surface-2: #123640;
+      --ink: #EAF4F4; --ink-dim: #9BC1C6; --line: #1D4550;
+      --teal: #3FB6C4; --teal-deep: #1D808F; --amber: #F2B134; --coral: #EF8A76;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0A1F26; --surface: #0F2A32; --surface-2: #123640;
+    --ink: #EAF4F4; --ink-dim: #9BC1C6; --line: #1D4550;
+    --teal: #3FB6C4; --teal-deep: #1D808F; --amber: #F2B134; --coral: #EF8A76;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: Inter, -apple-system, "Segoe UI", sans-serif;
+    height: 100%; min-height: 100vh;
+  }
+  h1, h2, h3, .num {
+    font-family: "Space Grotesk", Inter, sans-serif;
+  }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+  .app { display: flex; min-height: 100vh; }
+
+  /* Sidebar */
+  .sidebar {
+    width: 230px; flex-shrink: 0; background: var(--surface);
+    border-right: 1px solid var(--line);
+    padding: 20px 14px; display: flex; flex-direction: column; gap: 14px;
+  }
+  .brand { display: flex; align-items: center; gap: 8px; padding: 0 4px 6px; }
+  .brand svg { width: 22px; height: 22px; flex-shrink: 0; }
+  .brand h1 { font-size: 16px; margin: 0; letter-spacing: -0.01em; }
+  .swimmer-list { display: flex; flex-direction: column; gap: 3px; overflow-y: auto; }
+  .swimmer-item {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--radius);
+    cursor: pointer; border: 1px solid transparent; background: transparent; text-align: left;
+    color: var(--ink); font-size: 14px; font-family: inherit; width: 100%;
+  }
+  .swimmer-item:hover { background: var(--surface-2); }
+  .swimmer-item.active { background: var(--surface-2); border-color: var(--line); font-weight: 600; }
+  .swatch { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .swimmer-item .del {
+    margin-left: auto; opacity: 0; font-size: 11px; color: var(--ink-dim); background: none; border: none;
+    cursor: pointer; padding: 2px 4px;
+  }
+  .swimmer-item:hover .del { opacity: 0.7; }
+  .swimmer-item .del:hover { opacity: 1; color: var(--coral); }
+  .add-swimmer { display: flex; gap: 6px; margin-top: 4px; }
+  .add-swimmer input {
+    flex: 1; min-width: 0; padding: 7px 8px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--ink); font-size: 13px;
+  }
+  .icon-btn {
+    border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
+    border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 13px; font-weight: 600;
+  }
+  .icon-btn:hover { border-color: var(--teal); }
+
+  /* Main */
+  .main { flex: 1; min-width: 0; padding: 22px 26px 60px; overflow-x: hidden; }
+  .topbar {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;
+    margin-bottom: 20px;
+  }
+  .period-tabs { display: flex; gap: 4px; background: var(--surface-2); padding: 3px; border-radius: 9px; }
+  .period-tabs button {
+    border: none; background: transparent; color: var(--ink-dim); padding: 6px 12px; border-radius: 7px;
+    cursor: pointer; font-size: 13px; font-weight: 600; font-family: inherit;
+  }
+  .period-tabs button.active { background: var(--surface); color: var(--teal-deep); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .nav-period { display: flex; align-items: center; gap: 10px; }
+  .nav-period button {
+    border: 1px solid var(--line); background: var(--surface); color: var(--ink); width: 30px; height: 30px;
+    border-radius: 50%; cursor: pointer; font-size: 15px; line-height: 1;
+  }
+  .nav-period button:hover { border-color: var(--teal); }
+  .period-label { font-size: 14px; font-weight: 600; min-width: 150px; text-align: center; }
+  .today-btn { font-size: 12px; color: var(--teal-deep); background: none; border: none; cursor: pointer; text-decoration: underline; }
+
+  .stat-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 22px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+  .stat-card .label { font-size: 12px; color: var(--ink-dim); margin-bottom: 6px; }
+  .stat-card .num { font-size: 24px; font-weight: 600; }
+  .stat-card .sub { font-size: 11px; color: var(--ink-dim); margin-top: 2px; }
+
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 20px; }
+  .panel h2 { font-size: 14px; margin: 0 0 14px; color: var(--ink-dim); font-weight: 600; text-transform: none; }
+
+  .chart-wrap { overflow-x: auto; }
+  .chart-wrap svg { display: block; min-width: 100%; }
+  .bar { fill: var(--teal); }
+  .bar-track { fill: var(--surface-2); }
+  .chart-label { font-size: 10px; fill: var(--ink-dim); font-family: Inter, sans-serif; }
+  .chart-value { font-size: 10px; fill: var(--ink); font-family: "IBM Plex Mono", monospace; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-size: 11px; color: var(--ink-dim); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  td { padding: 8px; border-bottom: 1px solid var(--line); }
+  tr:last-child td { border-bottom: none; }
+  .zone-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
+  .zone-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .row-actions button {
+    border: none; background: none; cursor: pointer; color: var(--ink-dim); font-size: 12px; padding: 3px 5px;
+  }
+  .row-actions button:hover { color: var(--teal); }
+  .empty { color: var(--ink-dim); font-size: 13px; padding: 20px 0; text-align: center; }
+
+  .primary-btn {
+    background: var(--teal); color: #fff; border: none; border-radius: 8px; padding: 9px 16px;
+    font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+  }
+  .primary-btn:hover { background: var(--teal-deep); }
+
+  /* Modal */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(10,30,38,.45); display: none; align-items: flex-start; justify-content: center;
+    z-index: 50; padding: 40px 20px; overflow-y: auto;
+  }
+  .overlay.open { display: flex; }
+  .modal { background: var(--surface); border-radius: 14px; padding: 22px; width: 100%; max-width: 380px; border: 1px solid var(--line); margin: 0 auto; }
+  .modal h3 { margin: 0 0 16px; font-size: 16px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12px; color: var(--ink-dim); margin-bottom: 5px; }
+  .field input, .field select {
+    width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--ink); font-size: 14px; font-family: inherit;
+  }
+  .modal-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 18px; }
+  .link-btn { background: none; border: none; color: var(--coral); cursor: pointer; font-size: 13px; padding: 4px; }
+  .btn-group { display: flex; gap: 8px; }
+  .ghost-btn { background: none; border: 1px solid var(--line); color: var(--ink); border-radius: 8px; padding: 8px 14px; cursor: pointer; font-size: 13px; }
+
+  @media (max-width: 760px) {
+    .app { flex-direction: column; }
+    .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--line); flex-direction: row; align-items: center; flex-wrap: wrap; padding: 12px 14px; }
+    .swimmer-list { flex-direction: row; overflow-x: auto; }
+    .main { padding: 16px; }
+    .stat-row { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  .stroke-bars { display: flex; flex-direction: column; gap: 10px; }
+  .stroke-bar-row { display: grid; grid-template-columns: 90px 1fr 60px; align-items: center; gap: 10px; font-size: 12px; }
+  .stroke-bar-track { background: var(--surface-2); border-radius: 6px; height: 12px; overflow: hidden; }
+  .stroke-bar-fill { height: 100%; border-radius: 6px; }
+
+  .series-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+  .series-row { display: grid; grid-template-columns: 56px 1fr 1fr 24px; gap: 6px; align-items: center; }
+  .series-row input, .series-row select { padding: 6px 7px; font-size: 13px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font-family: inherit; }
+  .series-row .rm-series { background: none; border: none; color: var(--ink-dim); cursor: pointer; font-size: 14px; }
+  .series-row .rm-series:hover { color: var(--coral); }
+  .add-series-btn { background: none; border: 1px dashed var(--line); color: var(--teal-deep); border-radius: 7px; padding: 6px 10px; font-size: 12px; cursor: pointer; width: 100%; margin-bottom: 10px; }
+  .add-series-btn:hover { border-color: var(--teal); }
+  .total-dist { font-size: 13px; color: var(--ink-dim); margin: 4px 0 14px; }
+  .total-dist span { color: var(--ink); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M2 17c1.5 1.3 3 1.3 4.5 0s3-1.3 4.5 0 3 1.3 4.5 0 3-1.3 4.5 0" stroke="var(--teal)" stroke-width="1.8" stroke-linecap="round"/><circle cx="17" cy="6" r="2" fill="var(--amber)"/><path d="M4 12l9-2.5-2-2.3-4 1" stroke="var(--teal-deep)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <h1>Suivi Natation</h1>
+    </div>
+    <div class="swimmer-list" id="swimmerList"></div>
+    <form class="add-swimmer" id="addSwimmerForm">
+      <input type="text" id="newSwimmerName" placeholder="Nom du nageur" required>
+      <button class="icon-btn" type="submit">+</button>
+    </form>
+    <div id="storageNote" style="font-size:11px;color:var(--ink-dim);margin-top:4px;"></div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="period-tabs" id="periodTabs">
+        <button data-period="week">Semaine</button>
+        <button data-period="month">Mois</button>
+        <button data-period="quarter">Trimestre</button>
+        <button data-period="year">Année</button>
+      </div>
+      <div class="nav-period">
+        <button id="prevPeriod" aria-label="Précédent">‹</button>
+        <div>
+          <div class="period-label" id="periodLabel"></div>
+          <div style="text-align:center;"><button class="today-btn" id="todayBtn">aujourd'hui</button></div>
+        </div>
+        <button id="nextPeriod" aria-label="Suivant">›</button>
+      </div>
+    </div>
+
+    <div class="stat-row" id="statRow"></div>
+
+    <div class="panel">
+      <h2 id="chartTitle">Évolution de la distance</h2>
+      <div class="chart-wrap"><svg id="chart" viewBox="0 0 700 180" preserveAspectRatio="xMinYMin meet"></svg></div>
+    </div>
+
+    <div class="panel">
+      <h2>Répartition par nage</h2>
+      <div class="stroke-bars" id="strokeBars"></div>
+    </div>
+
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <h2 style="margin:0;">Journal des séances</h2>
+        <button class="primary-btn" id="openAddSession">+ Nouvelle séance</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table id="sessionTable">
+          <thead>
+            <tr>
+              <th>Date</th><th id="thSwimmer">Nageur</th><th>Durée</th><th>Intensité</th><th>Nage</th><th>Distance</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="sessionBody"></tbody>
+        </table>
+        <div class="empty" id="emptyMsg" style="display:none;">Aucune séance sur cette période.</div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="overlay" id="sessionOverlay">
+  <div class="modal">
+    <h3 id="modalTitle">Nouvelle séance</h3>
+    <form id="sessionForm">
+      <input type="hidden" id="sessionId">
+      <div class="field">
+        <label>Nageur</label>
+        <select id="fSwimmer" required></select>
+      </div>
+      <div class="field">
+        <label>Date</label>
+        <input type="date" id="fDate" required>
+      </div>
+      <div class="field">
+        <label>Durée (minutes)</label>
+        <input type="number" id="fDuration" min="1" step="1" required>
+      </div>
+      <div class="field">
+        <label>Intensité</label>
+        <select id="fIntensity" required></select>
+      </div>
+      <div class="field">
+        <label>Séries</label>
+        <div class="series-list" id="seriesList"></div>
+        <button type="button" class="add-series-btn" id="addSeriesBtn">+ Ajouter une série</button>
+        <div class="total-dist">Distance totale : <span id="totalDistDisplay">0 m</span></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="link-btn" id="deleteSessionBtn" style="display:none;">Supprimer</button>
+        <div class="btn-group" style="margin-left:auto;">
+          <button type="button" class="ghost-btn" id="cancelSession">Annuler</button>
+          <button type="submit" class="primary-btn">Enregistrer</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function(){
+  "use strict";
+
+  // ---- Supabase project credentials ----
+  // Replace with the values from Supabase > Project Settings > API
+  const SUPABASE_URL = "https://zpxlmzufeeskahyjkpqe.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpweGxtenVmZWVza2FoeWprcHFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk5ODA4ODgsImV4cCI6MjEwNTU1Njg4OH0.MuB_zpd2WJj8-MtNebye9HeKalg1m_lugGNETCkuQZk";
+
+  const PALETTE = ["#12707E","#E2725B","#F2B134","#5C8A8A","#9B6BA8","#4A7FB5","#C4693E","#2E9E7B"];
+  const ZONES = [
+    { key:1, name:"Récupération", color:"#8FBFC7" },
+    { key:2, name:"Endurance",    color:"#12707E" },
+    { key:3, name:"Seuil",        color:"#F2B134" },
+    { key:4, name:"VO2max",       color:"#E2725B" },
+    { key:5, name:"Sprint",       color:"#B23A2F" }
+  ];
+  const STROKES = [
+    { key:"crawl",   name:"Crawl",     color:"#12707E" },
+    { key:"dos",     name:"Dos",       color:"#4A7FB5" },
+    { key:"brasse",  name:"Brasse",    color:"#F2B134" },
+    { key:"papillon",name:"Papillon",  color:"#E2725B" },
+    { key:"4nages",  name:"4 Nages",   color:"#9B6BA8" },
+    { key:"libre",   name:"Nage libre",color:"#5C8A8A" }
+  ];
+  const WEEKDAYS = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
+  const MONTHS_SHORT = ["janv","févr","mars","avr","mai","juin","juil","août","sept","oct","nov","déc"];
+  const MONTHS_LONG = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+
+  let state = { swimmers: [], sessions: [], selected: "all", period: "week", anchor: new Date() };
+
+  function pad(n){ return n<10 ? "0"+n : ""+n; }
+  function toISO(d){ return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); }
+  function parseISO(s){ const [y,m,d]=s.split("-").map(Number); return new Date(y, m-1, d); }
+  function mondayIndex(d){ return (d.getDay()+6)%7; }
+  function startOfWeek(d){ const r=new Date(d); r.setHours(0,0,0,0); r.setDate(r.getDate()-mondayIndex(r)); return r; }
+  function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
+  function zoneOf(k){ return ZONES.find(z=>z.key===Number(k)) || ZONES[1]; }
+  function strokeOf(k){ return STROKES.find(z=>z.key===k) || STROKES[0]; }
+  function sessionSeries(s){ return Array.isArray(s.series) && s.series.length ? s.series : null; }
+  function sessionDistance(s){
+    const series = sessionSeries(s);
+    if(series) return series.reduce((a,r)=>a + Number(r.reps||0)*Number(r.distanceM||0), 0);
+    return Number(s.distanceM||0);
+  }
+  function sessionStrokeNames(s){
+    const series = sessionSeries(s);
+    if(!series) return "—";
+    const names = [...new Set(series.map(r=>strokeOf(r.stroke).name))];
+    return names.join(", ");
+  }
+  function swimmerOf(id){ return state.swimmers.find(s=>s.id===id); }
+  function colorFor(swimmer, idx){ return PALETTE[idx % PALETTE.length]; }
+
+  // ---- persistence layer (Supabase) ----
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  async function fetchAll(){
+    const [{ data: swimmers, error: e1 }, { data: sessions, error: e2 }] = await Promise.all([
+      supabase.from("swimmers").select("*").order("created_at"),
+      supabase.from("sessions").select("*")
+    ]);
+    if(e1) throw e1;
+    if(e2) throw e2;
+    state.swimmers = (swimmers||[]).map(s=>({ id:s.id, name:s.name }));
+    state.sessions = (sessions||[]).map(s=>({
+      id:s.id, swimmerId:s.swimmer_id, date:s.date, durationMin:s.duration_min,
+      intensity:s.intensity, series:s.series, distanceM:s.distance_m
+    }));
+    render();
+  }
+
+  async function addSwimmer(name){
+    const { error } = await supabase.from("swimmers").insert({ name });
+    if(error) throw error;
+    await fetchAll();
+  }
+  async function deleteSwimmer(id){
+    const { error } = await supabase.from("swimmers").delete().eq("id", id);
+    if(error) throw error;
+    if(state.selected===id) state.selected="all";
+    await fetchAll();
+  }
+  async function saveSession(data, editId){
+    const row = {
+      swimmer_id: data.swimmerId, date: data.date, duration_min: data.durationMin,
+      intensity: data.intensity, series: data.series, distance_m: data.distanceM
+    };
+    const { error } = editId
+      ? await supabase.from("sessions").update(row).eq("id", editId)
+      : await supabase.from("sessions").insert(row);
+    if(error) throw error;
+    await fetchAll();
+  }
+  async function deleteSession(id){
+    const { error } = await supabase.from("sessions").delete().eq("id", id);
+    if(error) throw error;
+    await fetchAll();
+  }
+
+  async function initData(){
+    document.getElementById("storageNote").textContent = "Données enregistrées dans Supabase";
+    try{
+      await fetchAll();
+    }catch(err){
+      document.getElementById("storageNote").textContent = "Erreur de connexion à Supabase";
+      alert("Connexion à Supabase impossible : " + (err && err.message ? err.message : err) + "\n\nVérifiez SUPABASE_URL et SUPABASE_ANON_KEY dans le fichier.");
+    }
+  }
+
+  // ---- period logic ----
+  function periodRange(type, anchor){
+    if(type==="week"){
+      const start = startOfWeek(anchor);
+      return { start, end: addDays(start,7) };
+    }
+    if(type==="month"){
+      const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+      const end = new Date(anchor.getFullYear(), anchor.getMonth()+1, 1);
+      return { start, end };
+    }
+    if(type==="quarter"){
+      const qStartMonth = Math.floor(anchor.getMonth()/3)*3;
+      const start = new Date(anchor.getFullYear(), qStartMonth, 1);
+      const end = new Date(anchor.getFullYear(), qStartMonth+3, 1);
+      return { start, end };
+    }
+    const start = new Date(anchor.getFullYear(), 0, 1);
+    const end = new Date(anchor.getFullYear()+1, 0, 1);
+    return { start, end };
+  }
+  function shiftAnchor(type, anchor, dir){
+    const r = new Date(anchor);
+    if(type==="week") r.setDate(r.getDate() + dir*7);
+    else if(type==="month") r.setMonth(r.getMonth()+dir);
+    else if(type==="quarter") r.setMonth(r.getMonth()+dir*3);
+    else r.setFullYear(r.getFullYear()+dir);
+    return r;
+  }
+  function periodLabel(type, start, end){
+    if(type==="week"){
+      const endIncl = addDays(end,-1);
+      const sameMonth = start.getMonth()===endIncl.getMonth();
+      return start.getDate() + (sameMonth?"":" "+MONTHS_SHORT[start.getMonth()]) + " – " + endIncl.getDate() + " " + MONTHS_SHORT[endIncl.getMonth()] + " " + endIncl.getFullYear();
+    }
+    if(type==="month") return MONTHS_LONG[start.getMonth()] + " " + start.getFullYear();
+    if(type==="quarter") return "T" + (Math.floor(start.getMonth()/3)+1) + " " + start.getFullYear();
+    return "" + start.getFullYear();
+  }
+  function bucketIndex(type, d, start){
+    if(type==="week"){ return mondayIndex(d); }
+    if(type==="month"){
+      const offset = mondayIndex(start);
+      return Math.floor((d.getDate()-1+offset)/7);
+    }
+    return (d.getFullYear()-start.getFullYear())*12 + (d.getMonth()-start.getMonth());
+  }
+  function bucketLabels(type, start, end){
+    if(type==="week") return WEEKDAYS.slice();
+    if(type==="month"){
+      const lastDay = addDays(end,-1);
+      const n = bucketIndex("month", lastDay, start) + 1;
+      const labels = [];
+      for(let i=0;i<n;i++) labels.push("S"+(i+1));
+      return labels;
+    }
+    const n = type==="quarter" ? 3 : 12;
+    const labels = [];
+    for(let i=0;i<n;i++){
+      const m = (start.getMonth()+i)%12;
+      labels.push(MONTHS_SHORT[m]);
+    }
+    return labels;
+  }
+
+  function filteredSessions(){
+    const { start, end } = periodRange(state.period, state.anchor);
+    return state.sessions.filter(s=>{
+      const d = parseISO(s.date);
+      if(d < start || d >= end) return false;
+      if(state.selected!=="all" && s.swimmerId!==state.selected) return false;
+      return true;
+    }).sort((a,b)=> a.date < b.date ? 1 : -1);
+  }
+
+  // ---- rendering ----
+  function render(){
+    renderSidebar();
+    renderTopbar();
+    const sessions = filteredSessions();
+    renderStats(sessions);
+    renderChart(sessions);
+    renderStrokeBreakdown(sessions);
+    renderTable(sessions);
+    renderSwimmerSelect();
+  }
+
+  function renderSidebar(){
+    const list = document.getElementById("swimmerList");
+    list.innerHTML = "";
+    const allBtn = document.createElement("button");
+    allBtn.className = "swimmer-item" + (state.selected==="all" ? " active" : "");
+    allBtn.innerHTML = '<span class="swatch" style="background:var(--teal)"></span><span>Toute l\'équipe</span>';
+    allBtn.onclick = () => { state.selected = "all"; render(); };
+    list.appendChild(allBtn);
+    state.swimmers.forEach((s, idx) => {
+      const item = document.createElement("button");
+      item.className = "swimmer-item" + (state.selected===s.id ? " active" : "");
+      item.innerHTML = '<span class="swatch" style="background:'+colorFor(s,idx)+'"></span><span>'+escapeHtml(s.name)+'</span><span class="del" title="Supprimer">✕</span>';
+      item.onclick = (e) => {
+        if(e.target.classList.contains("del")){
+          e.stopPropagation();
+          if(confirm("Supprimer "+s.name+" et toutes ses séances ?")) deleteSwimmer(s.id);
+          return;
+        }
+        state.selected = s.id; render();
+      };
+      list.appendChild(item);
+    });
+  }
+
+  function renderSwimmerSelect(){
+    const sel = document.getElementById("fSwimmer");
+    const prev = sel.value;
+    sel.innerHTML = "";
+    state.swimmers.forEach(s=>{
+      const opt = document.createElement("option");
+      opt.value = s.id; opt.textContent = s.name;
+      sel.appendChild(opt);
+    });
+    if(state.selected!=="all") sel.value = state.selected;
+    else if(prev) sel.value = prev;
+  }
+
+  function renderTopbar(){
+    document.querySelectorAll("#periodTabs button").forEach(b=>{
+      b.classList.toggle("active", b.dataset.period===state.period);
+    });
+    const { start, end } = periodRange(state.period, state.anchor);
+    document.getElementById("periodLabel").textContent = periodLabel(state.period, start, end);
+    document.getElementById("thSwimmer").style.display = state.selected==="all" ? "" : "none";
+  }
+
+  function strokeDistanceMap(sessions){
+    const map = {};
+    sessions.forEach(s=>{
+      const series = sessionSeries(s);
+      if(series){
+        series.forEach(r=>{
+          const d = Number(r.reps||0)*Number(r.distanceM||0);
+          map[r.stroke] = (map[r.stroke]||0) + d;
+        });
+      }
+    });
+    return map;
+  }
+
+  function renderStats(sessions){
+    const totalDist = sessions.reduce((a,s)=>a+sessionDistance(s),0);
+    const totalDur = sessions.reduce((a,s)=>a+Number(s.durationMin||0),0);
+    const count = sessions.length;
+    const avgInt = count ? (sessions.reduce((a,s)=>a+Number(s.intensity||0),0)/count) : 0;
+    const hrs = Math.floor(totalDur/60), mins = Math.round(totalDur%60);
+    const strokeMap = strokeDistanceMap(sessions);
+    let dominant = "—";
+    const strokeEntries = Object.entries(strokeMap);
+    if(strokeEntries.length){
+      strokeEntries.sort((a,b)=>b[1]-a[1]);
+      dominant = strokeOf(strokeEntries[0][0]).name;
+    }
+    const cards = [
+      { label:"Distance totale", value:(totalDist/1000).toLocaleString("fr-FR",{maximumFractionDigits:1}), sub:"km" },
+      { label:"Temps d'entraînement", value: hrs+"h"+pad(mins), sub: count+" séance"+(count>1?"s":"") },
+      { label:"Séances", value: count, sub: state.selected==="all" ? "équipe" : "individuel" },
+      { label:"Intensité moyenne", value: avgInt? avgInt.toFixed(1):"—", sub: avgInt? zoneOf(Math.round(avgInt)).name : "" },
+      { label:"Nage dominante", value: dominant, sub: "sur la période" }
+    ];
+    const row = document.getElementById("statRow");
+    row.innerHTML = "";
+    cards.forEach(c=>{
+      const el = document.createElement("div");
+      el.className = "stat-card";
+      el.innerHTML = '<div class="label">'+c.label+'</div><div class="num mono">'+c.value+'</div><div class="sub">'+c.sub+'</div>';
+      row.appendChild(el);
+    });
+  }
+
+  function renderChart(sessions){
+    const { start, end } = periodRange(state.period, state.anchor);
+    const labels = bucketLabels(state.period, start, end);
+    const values = new Array(labels.length).fill(0);
+    sessions.forEach(s=>{
+      const idx = bucketIndex(state.period, parseISO(s.date), start);
+      if(idx>=0 && idx<values.length) values[idx] += sessionDistance(s)/1000;
+    });
+    const svg = document.getElementById("chart");
+    const W = Math.max(700, labels.length*70), H = 180;
+    svg.setAttribute("viewBox", "0 0 "+W+" "+H);
+    const max = Math.max(1, ...values);
+    const barW = (W-40)/labels.length*0.55;
+    const gap = (W-40)/labels.length;
+    let svgHtml = "";
+    labels.forEach((lab,i)=>{
+      const x = 30 + i*gap + (gap - barW)/2;
+      const h = Math.max(2, (values[i]/max)*118);
+      const y = 140 - h;
+      svgHtml += '<rect class="bar-track" x="'+x+'" y="10" width="'+barW+'" height="130" rx="4"></rect>';
+      svgHtml += '<rect class="bar" x="'+x+'" y="'+y+'" width="'+barW+'" height="'+h+'" rx="4"></rect>';
+      svgHtml += '<text class="chart-value" x="'+(x+barW/2)+'" y="'+(y-6<14?14:y-6)+'" text-anchor="middle">'+(values[i]?values[i].toFixed(1):"")+'</text>';
+      svgHtml += '<text class="chart-label" x="'+(x+barW/2)+'" y="158" text-anchor="middle">'+lab+'</text>';
+    });
+    svg.innerHTML = svgHtml;
+    document.getElementById("chartTitle").textContent = "Évolution de la distance (km)" + (state.selected!=="all" && swimmerOf(state.selected) ? " — "+swimmerOf(state.selected).name : "");
+  }
+
+  function renderStrokeBreakdown(sessions){
+    const map = strokeDistanceMap(sessions);
+    const container = document.getElementById("strokeBars");
+    const entries = STROKES.map(st => ({ st, dist: map[st.key]||0 })).filter(e=>e.dist>0);
+    if(!entries.length){
+      container.innerHTML = '<div class="empty">Pas de séries enregistrées sur cette période.</div>';
+      return;
+    }
+    entries.sort((a,b)=>b.dist-a.dist);
+    const max = Math.max(...entries.map(e=>e.dist));
+    container.innerHTML = entries.map(e => {
+      const pct = Math.max(4, Math.round((e.dist/max)*100));
+      return '<div class="stroke-bar-row">'+
+        '<div>'+e.st.name+'</div>'+
+        '<div class="stroke-bar-track"><div class="stroke-bar-fill" style="width:'+pct+'%;background:'+e.st.color+'"></div></div>'+
+        '<div class="mono" style="text-align:right;">'+(e.dist/1000).toLocaleString("fr-FR",{maximumFractionDigits:1})+' km</div>'+
+      '</div>';
+    }).join("");
+  }
+
+  function renderTable(sessions){
+    const body = document.getElementById("sessionBody");
+    body.innerHTML = "";
+    document.getElementById("emptyMsg").style.display = sessions.length ? "none" : "block";
+    sessions.forEach(s=>{
+      const sw = swimmerOf(s.swimmerId);
+      const z = zoneOf(s.intensity);
+      const tr = document.createElement("tr");
+      const d = parseISO(s.date);
+      tr.innerHTML =
+        '<td class="mono">'+pad(d.getDate())+"/"+pad(d.getMonth()+1)+"/"+d.getFullYear()+'</td>'+
+        '<td style="display:'+(state.selected==="all"?"":"none")+'">'+(sw?escapeHtml(sw.name):"—")+'</td>'+
+        '<td class="mono">'+s.durationMin+' min</td>'+
+        '<td><span class="zone-chip"><span class="zone-dot" style="background:'+z.color+'"></span>'+z.name+'</span></td>'+
+        '<td>'+sessionStrokeNames(s)+'</td>'+
+        '<td class="mono">'+sessionDistance(s).toLocaleString("fr-FR")+' m</td>'+
+        '<td class="row-actions"><button data-edit="'+s.id+'">Modifier</button></td>';
+      body.appendChild(tr);
+    });
+    body.querySelectorAll("[data-edit]").forEach(btn=>{
+      btn.onclick = () => openSessionModal(btn.dataset.edit);
+    });
+  }
+
+  function escapeHtml(str){
+    return String(str).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+
+  // ---- modal ----
+  const overlay = document.getElementById("sessionOverlay");
+  const form = document.getElementById("sessionForm");
+  const intensitySel = document.getElementById("fIntensity");
+  ZONES.forEach(z=>{
+    const opt = document.createElement("option");
+    opt.value = z.key; opt.textContent = z.key+" — "+z.name;
+    intensitySel.appendChild(opt);
+  });
+
+  // ---- series builder ----
+  let currentSeries = [];
+
+  function renderSeriesRows(){
+    const list = document.getElementById("seriesList");
+    list.innerHTML = "";
+    currentSeries.forEach((row, i) => {
+      const div = document.createElement("div");
+      div.className = "series-row";
+      div.innerHTML =
+        '<input type="number" min="1" step="1" value="'+row.reps+'" data-field="reps" data-idx="'+i+'" placeholder="x">'+
+        '<input type="number" min="0" step="25" value="'+row.distanceM+'" data-field="distanceM" data-idx="'+i+'" placeholder="m">'+
+        '<select data-field="stroke" data-idx="'+i+'"></select>'+
+        '<button type="button" class="rm-series" data-rm="'+i+'" title="Retirer">✕</button>';
+      list.appendChild(div);
+      const sel = div.querySelector("select");
+      STROKES.forEach(st=>{
+        const opt = document.createElement("option");
+        opt.value = st.key; opt.textContent = st.name;
+        if(st.key===row.stroke) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    });
+    list.querySelectorAll("input,select").forEach(el=>{
+      el.addEventListener("input", onSeriesFieldChange);
+      el.addEventListener("change", onSeriesFieldChange);
+    });
+    list.querySelectorAll("[data-rm]").forEach(btn=>{
+      btn.onclick = () => { currentSeries.splice(Number(btn.dataset.rm),1); renderSeriesRows(); };
+    });
+    updateTotalDist();
+  }
+  function onSeriesFieldChange(e){
+    const idx = Number(e.target.dataset.idx);
+    const field = e.target.dataset.field;
+    currentSeries[idx][field] = field==="stroke" ? e.target.value : Number(e.target.value);
+    updateTotalDist();
+  }
+  function updateTotalDist(){
+    const total = currentSeries.reduce((a,r)=>a+Number(r.reps||0)*Number(r.distanceM||0),0);
+    document.getElementById("totalDistDisplay").textContent = total.toLocaleString("fr-FR")+" m";
+  }
+  document.getElementById("addSeriesBtn").onclick = () => {
+    currentSeries.push({ reps:4, distanceM:100, stroke:"crawl" });
+    renderSeriesRows();
+  };
+
+  function openSessionModal(editId){
+    renderSwimmerSelect();
+    document.getElementById("modalTitle").textContent = editId ? "Modifier la séance" : "Nouvelle séance";
+    document.getElementById("deleteSessionBtn").style.display = editId ? "inline-block" : "none";
+    document.getElementById("sessionId").value = editId || "";
+    if(editId){
+      const s = state.sessions.find(x=>x.id===editId);
+      document.getElementById("fSwimmer").value = s.swimmerId;
+      document.getElementById("fDate").value = s.date;
+      document.getElementById("fDuration").value = s.durationMin;
+      document.getElementById("fIntensity").value = s.intensity;
+      const existing = sessionSeries(s);
+      currentSeries = existing
+        ? existing.map(r=>({ reps:Number(r.reps), distanceM:Number(r.distanceM), stroke:r.stroke }))
+        : (s.distanceM ? [{ reps:1, distanceM:Number(s.distanceM), stroke:"crawl" }] : []);
+    } else {
+      form.reset();
+      document.getElementById("fDate").value = toISO(new Date());
+      document.getElementById("fIntensity").value = 2;
+      if(state.selected!=="all") document.getElementById("fSwimmer").value = state.selected;
+      currentSeries = [{ reps:4, distanceM:100, stroke:"crawl" }];
+    }
+    renderSeriesRows();
+    overlay.classList.add("open");
+  }
+  function closeModal(){ overlay.classList.remove("open"); }
+
+  document.getElementById("openAddSession").onclick = () => {
+    if(state.swimmers.length===0){ alert("Ajoutez d'abord un nageur."); return; }
+    openSessionModal(null);
+  };
+  document.getElementById("cancelSession").onclick = closeModal;
+  overlay.addEventListener("click", e=>{ if(e.target===overlay) closeModal(); });
+
+  form.addEventListener("submit", async (e)=>{
+    e.preventDefault();
+    const editId = document.getElementById("sessionId").value || null;
+    const validSeries = currentSeries.filter(r=>Number(r.reps)>0 && Number(r.distanceM)>0);
+    if(!validSeries.length){ alert("Ajoutez au moins une série valide (répétitions et distance)."); return; }
+    const data = {
+      swimmerId: document.getElementById("fSwimmer").value,
+      date: document.getElementById("fDate").value,
+      durationMin: Number(document.getElementById("fDuration").value),
+      intensity: Number(document.getElementById("fIntensity").value),
+      series: validSeries,
+      distanceM: validSeries.reduce((a,r)=>a+Number(r.reps)*Number(r.distanceM),0)
+    };
+    try{
+      await saveSession(data, editId);
+      closeModal();
+    }catch(err){
+      alert("Impossible d'enregistrer la séance : " + (err && err.message ? err.message : err));
+    }
+  });
+  document.getElementById("deleteSessionBtn").onclick = async () => {
+    const id = document.getElementById("sessionId").value;
+    if(id && confirm("Supprimer cette séance ?")){
+      await deleteSession(id);
+      closeModal();
+    }
+  };
+
+  document.getElementById("addSwimmerForm").addEventListener("submit", async (e)=>{
+    e.preventDefault();
+    const input = document.getElementById("newSwimmerName");
+    const name = input.value.trim();
+    if(!name) return;
+    try{
+      await addSwimmer(name);
+      input.value = "";
+    }catch(err){
+      alert("Impossible d'ajouter ce nageur : " + (err && err.message ? err.message : err));
+    }
+  });
+
+  document.querySelectorAll("#periodTabs button").forEach(btn=>{
+    btn.onclick = () => { state.period = btn.dataset.period; render(); };
+  });
+  document.getElementById("prevPeriod").onclick = () => { state.anchor = shiftAnchor(state.period, state.anchor, -1); render(); };
+  document.getElementById("nextPeriod").onclick = () => { state.anchor = shiftAnchor(state.period, state.anchor, 1); render(); };
+  document.getElementById("todayBtn").onclick = () => { state.anchor = new Date(); render(); };
+
+  initData();
+})();
+</script>
+</body>
+</html>
