@@ -290,8 +290,7 @@
 
     <div class="panel">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-        <h2 id="journalTitle" style="margin:0;">Journal des séances</h2>
-        <button class="primary-btn" id="openAddSession">+ Nouvelle séance</button>
+        <h2 id="journalTitle" style="margin:0;">Journal des entraînements</h2>
         <button class="primary-btn" id="openAddTraining" style="display:none;">+ Nouvel entraînement</button>
         <button class="primary-btn" id="openAddCompetition" style="display:none;">+ Nouvelle compétition</button>
         <button class="ghost-btn" id="openImportExtranat" style="display:none;">⇩ Importer Extranat</button>
@@ -305,48 +304,10 @@
           </thead>
           <tbody id="sessionBody"></tbody>
         </table>
-        <div class="empty" id="emptyMsg" style="display:none;">Aucune séance sur cette période.</div>
+        <div class="empty" id="emptyMsg" style="display:none;">Aucun entraînement enregistré sur cette période.</div>
       </div>
     </div>
   </main>
-</div>
-
-<div class="overlay" id="sessionOverlay">
-  <div class="modal">
-    <h3 id="modalTitle">Nouvelle séance</h3>
-    <form id="sessionForm">
-      <input type="hidden" id="sessionId">
-      <div class="field">
-        <label>Nageur</label>
-        <select id="fSwimmer" required></select>
-      </div>
-      <div class="field">
-        <label>Date</label>
-        <input type="date" id="fDate" required>
-      </div>
-      <div class="field">
-        <label>Durée (minutes)</label>
-        <input type="number" id="fDuration" min="1" step="1" required>
-      </div>
-      <div class="field">
-        <label>Intensité</label>
-        <select id="fIntensity" required></select>
-      </div>
-      <div class="field">
-        <label>Séries</label>
-        <div class="series-list" id="seriesList"></div>
-        <button type="button" class="add-series-btn" id="addSeriesBtn">+ Ajouter une série</button>
-        <div class="total-dist">Distance totale : <span id="totalDistDisplay">0 m</span></div>
-      </div>
-      <div class="modal-actions">
-        <button type="button" class="link-btn" id="deleteSessionBtn" style="display:none;">Supprimer</button>
-        <div class="btn-group" style="margin-left:auto;">
-          <button type="button" class="ghost-btn" id="cancelSession">Annuler</button>
-          <button type="submit" class="primary-btn">Enregistrer</button>
-        </div>
-      </div>
-    </form>
-  </div>
 </div>
 
 <div class="overlay" id="attendanceOverlay">
@@ -361,6 +322,20 @@
       <div class="field">
         <label>Libellé (optionnel)</label>
         <input type="text" id="aLabel" placeholder="ex : séance du soir">
+      </div>
+      <div class="field">
+        <label>Durée (minutes)</label>
+        <input type="number" id="fDuration" min="1" step="1" required>
+      </div>
+      <div class="field">
+        <label>Intensité</label>
+        <select id="fIntensity" required></select>
+      </div>
+      <div class="field">
+        <label>Séries (communes au groupe)</label>
+        <div class="series-list" id="seriesList"></div>
+        <button type="button" class="add-series-btn" id="addSeriesBtn">+ Ajouter une série</button>
+        <div class="total-dist">Distance totale : <span id="totalDistDisplay">0 m</span></div>
       </div>
       <div class="field">
         <label>Présence</label>
@@ -541,26 +516,23 @@
 
   function rowToTeam(r){ return { id:r.id, name:r.name, createdAt:r.created_at }; }
   function rowToSwimmer(r){ return { id:r.id, name:r.name, teamId:r.team_id, createdAt:r.created_at }; }
-  function rowToSession(r){ return { id:r.id, swimmerId:r.swimmer_id, date:r.date, durationMin:r.duration_min, intensity:r.intensity, series:r.series, distanceM:r.distance_m }; }
-  function rowToTraining(r){ return { id:r.id, teamId:r.team_id, date:r.date, label:r.label }; }
+  function rowToTraining(r){ return { id:r.id, teamId:r.team_id, date:r.date, label:r.label, durationMin:r.duration_min, intensity:r.intensity, series:r.series, distanceM:r.distance_m }; }
   function rowToAttendance(r){ return { id:r.id, trainingId:r.training_id, swimmerId:r.swimmer_id, present:r.present }; }
   function rowToCompetition(r){ return { id:r.id, teamId:r.team_id, date:r.date, name:r.name, course:r.course }; }
   function rowToResult(r){ return { id:r.id, competitionId:r.competition_id, swimmerId:r.swimmer_id, event:r.event, timeCs:r.time_cs }; }
 
   async function fetchAll(){
-    const [t, sw, se, tr, at, cp, rs] = await Promise.all([
+    const [t, sw, tr, at, cp, rs] = await Promise.all([
       supabase.from("teams").select("*").order("created_at"),
       supabase.from("swimmers").select("*").order("created_at"),
-      supabase.from("sessions").select("*"),
       supabase.from("trainings").select("*"),
       supabase.from("attendance").select("*"),
       supabase.from("competitions").select("*"),
       supabase.from("results").select("*")
     ]);
-    for(const r of [t,sw,se,tr,at,cp,rs]) if(r.error) throw r.error;
+    for(const r of [t,sw,tr,at,cp,rs]) if(r.error) throw r.error;
     state.teams = (t.data||[]).map(rowToTeam);
     state.swimmers = (sw.data||[]).map(rowToSwimmer);
-    state.sessions = (se.data||[]).map(rowToSession);
     state.trainings = (tr.data||[]).map(rowToTraining);
     state.attendance = (at.data||[]).map(rowToAttendance);
     state.competitions = (cp.data||[]).map(rowToCompetition);
@@ -611,25 +583,12 @@
     await fetchAll();
   }
 
-  async function saveSession(data, editId){
-    const row = {
-      swimmer_id: data.swimmerId, date: data.date, duration_min: data.durationMin,
-      intensity: data.intensity, series: data.series, distance_m: data.distanceM
-    };
-    const { error } = editId
-      ? await supabase.from("sessions").update(row).eq("id", editId)
-      : await supabase.from("sessions").insert(row);
-    if(error) throw error;
-    await fetchAll();
-  }
-  async function deleteSession(id){
-    const { error } = await supabase.from("sessions").delete().eq("id", id);
-    if(error) throw error;
-    await fetchAll();
-  }
-
   async function saveTraining(data, attendanceMap, editId){
-    const row = { team_id: data.teamId, date: data.date, label: data.label||null };
+    const row = {
+      team_id: data.teamId, date: data.date, label: data.label||null,
+      duration_min: data.durationMin, intensity: data.intensity,
+      series: data.series, distance_m: data.distanceM
+    };
     let trainingId = editId;
     if(editId){
       const { error } = await supabase.from("trainings").update(row).eq("id", editId);
@@ -770,16 +729,11 @@
     return labels;
   }
 
-  function filteredSessions(){
-    const { start, end } = periodRange(state.period, state.anchor);
-    const teamIds = new Set(teamSwimmers().map(s=>s.id));
-    return state.sessions.filter(s=>{
-      if(!teamIds.has(s.swimmerId)) return false;
-      const d = parseISO(s.date);
-      if(d < start || d >= end) return false;
-      if(state.selected!=="all" && s.swimmerId!==state.selected) return false;
-      return true;
-    }).sort((a,b)=> a.date < b.date ? 1 : -1);
+  function trainingsAttendedBy(trainings, swimmerId){
+    return trainings.filter(t=>{
+      const rec = state.attendance.find(a=>a.trainingId===t.id && a.swimmerId===swimmerId);
+      return rec && rec.present;
+    });
   }
 
   // ---- attendance helpers ----
@@ -934,27 +888,26 @@
       renderCompetitionBreakdown(analysisComps);
       renderCompetitionTable(competitions);
     } else {
-      const sessions = filteredSessions();
-      renderStats(sessions);
-      renderChart(sessions);
-      renderStrokeBreakdown(sessions);
-      renderTable(sessions);
+      const allTrainings = filteredTrainings();
+      const trainingsForView = state.selected==="all" ? allTrainings : trainingsAttendedBy(allTrainings, state.selected);
+      renderStats(trainingsForView);
+      renderChart(trainingsForView);
+      renderStrokeBreakdown(trainingsForView);
+      renderTable(trainingsForView);
     }
-    renderSwimmerSelect();
   }
 
   function renderModeTabs(){
     document.querySelectorAll("#modeTabs button").forEach(b=>{
       b.classList.toggle("active", b.dataset.mode===state.mode);
     });
-    document.getElementById("openAddSession").style.display = state.mode==="training" ? "inline-block" : "none";
-    document.getElementById("openAddTraining").style.display = state.mode==="attendance" ? "inline-block" : "none";
+    document.getElementById("openAddTraining").style.display = (state.mode==="attendance" || state.mode==="training") ? "inline-block" : "none";
     document.getElementById("openAddCompetition").style.display = state.mode==="competition" ? "inline-block" : "none";
     document.getElementById("openImportExtranat").style.display = state.mode==="competition" ? "inline-block" : "none";
     document.getElementById("eventSelect").style.display = state.mode==="competition" ? "inline-block" : "none";
     document.getElementById("courseSelect").style.display = state.mode==="competition" ? "inline-block" : "none";
     const titles = {
-      training: ["Journal des séances", "Répartition par nage"],
+      training: ["Journal des entraînements", "Répartition par nage"],
       attendance: ["Historique des entraînements", "Présence par nageur"],
       competition: ["Historique des compétitions", "Classement — épreuve"]
     };
@@ -1110,19 +1063,6 @@
     });
   }
 
-  function renderSwimmerSelect(){
-    const sel = document.getElementById("fSwimmer");
-    const prev = sel.value;
-    sel.innerHTML = "";
-    teamSwimmers().forEach(s=>{
-      const opt = document.createElement("option");
-      opt.value = s.id; opt.textContent = s.name;
-      sel.appendChild(opt);
-    });
-    if(state.selected!=="all") sel.value = state.selected;
-    else if(prev) sel.value = prev;
-  }
-
   function renderTopbar(){
     document.querySelectorAll("#periodTabs button").forEach(b=>{
       b.classList.toggle("active", b.dataset.period===state.period);
@@ -1160,8 +1100,8 @@
     }
     const cards = [
       { label:"Distance totale", value:(totalDist/1000).toLocaleString("fr-FR",{maximumFractionDigits:1}), sub:"km" },
-      { label:"Temps d'entraînement", value: hrs+"h"+pad(mins), sub: count+" séance"+(count>1?"s":"") },
-      { label:"Séances", value: count, sub: state.selected==="all" ? "équipe" : "individuel" },
+      { label:"Temps d'entraînement", value: hrs+"h"+pad(mins), sub: count+" entraînement"+(count>1?"s":"") },
+      { label:"Entraînements", value: count, sub: state.selected==="all" ? "équipe" : "présences" },
       { label:"Intensité moyenne", value: avgInt? avgInt.toFixed(1):"—", sub: avgInt? zoneOf(Math.round(avgInt)).name : "" },
       { label:"Nage dominante", value: dominant, sub: "sur la période" }
     ];
@@ -1501,31 +1441,31 @@
   }
 
 
-  function renderTable(sessions){
+  function renderTable(trainings){
     const head = document.getElementById("tableHead");
-    head.innerHTML = '<tr><th>Date</th><th id="thSwimmer">Nageur</th><th>Durée</th><th>Intensité</th><th>Nage</th><th>Distance</th><th></th></tr>';
-    document.getElementById("thSwimmer").style.display = state.selected==="all" ? "" : "none";
+    head.innerHTML = '<tr><th>Date</th><th>Libellé</th><th>Durée</th><th>Intensité</th><th>Nage</th><th>Distance</th><th>Présents</th><th></th></tr>';
     const body = document.getElementById("sessionBody");
     body.innerHTML = "";
-    document.getElementById("emptyMsg").style.display = sessions.length ? "none" : "block";
-    document.getElementById("emptyMsg").textContent = "Aucune séance sur cette période.";
-    sessions.forEach(s=>{
-      const sw = swimmerOf(s.swimmerId);
-      const z = zoneOf(s.intensity);
+    document.getElementById("emptyMsg").style.display = trainings.length ? "none" : "block";
+    document.getElementById("emptyMsg").textContent = "Aucun entraînement enregistré sur cette période.";
+    trainings.forEach(t=>{
+      const z = zoneOf(t.intensity);
+      const stats = trainingStats(t);
       const tr = document.createElement("tr");
-      const d = parseISO(s.date);
+      const d = parseISO(t.date);
       tr.innerHTML =
         '<td class="mono">'+pad(d.getDate())+"/"+pad(d.getMonth()+1)+"/"+d.getFullYear()+'</td>'+
-        '<td style="display:'+(state.selected==="all"?"":"none")+'">'+(sw?escapeHtml(sw.name):"—")+'</td>'+
-        '<td class="mono">'+s.durationMin+' min</td>'+
+        '<td>'+(t.label?escapeHtml(t.label):"—")+'</td>'+
+        '<td class="mono">'+(t.durationMin||0)+' min</td>'+
         '<td><span class="zone-chip"><span class="zone-dot" style="background:'+z.color+'"></span>'+z.name+'</span></td>'+
-        '<td>'+sessionStrokeNames(s)+'</td>'+
-        '<td class="mono">'+sessionDistance(s).toLocaleString("fr-FR")+' m</td>'+
-        '<td class="row-actions"><button data-edit="'+s.id+'">Modifier</button></td>';
+        '<td>'+sessionStrokeNames(t)+'</td>'+
+        '<td class="mono">'+sessionDistance(t).toLocaleString("fr-FR")+' m</td>'+
+        '<td class="mono">'+stats.present+' / '+stats.total+'</td>'+
+        '<td class="row-actions"><button data-edit="'+t.id+'">Modifier</button></td>';
       body.appendChild(tr);
     });
     body.querySelectorAll("[data-edit]").forEach(btn=>{
-      btn.onclick = () => openSessionModal(btn.dataset.edit);
+      btn.onclick = () => openAttendanceModal(btn.dataset.edit);
     });
   }
 
@@ -1548,8 +1488,6 @@
   }
 
   // ---- modal ----
-  const overlay = document.getElementById("sessionOverlay");
-  const form = document.getElementById("sessionForm");
   const intensitySel = document.getElementById("fIntensity");
   ZONES.forEach(z=>{
     const opt = document.createElement("option");
@@ -1557,7 +1495,7 @@
     intensitySel.appendChild(opt);
   });
 
-  // ---- series builder ----
+  // ---- series builder (shared by the training/attendance modal) ----
   let currentSeries = [];
 
   function renderSeriesRows(){
@@ -1604,35 +1542,6 @@
     renderSeriesRows();
   };
 
-  function openSessionModal(editId){
-    renderSwimmerSelect();
-    document.getElementById("modalTitle").textContent = editId ? "Modifier la séance" : "Nouvelle séance";
-    document.getElementById("deleteSessionBtn").style.display = editId ? "inline-block" : "none";
-    document.getElementById("deleteSessionBtn").textContent = "Supprimer";
-    document.getElementById("deleteSessionBtn").dataset.confirming = "false";
-    document.getElementById("sessionId").value = editId || "";
-    if(editId){
-      const s = state.sessions.find(x=>x.id===editId);
-      document.getElementById("fSwimmer").value = s.swimmerId;
-      document.getElementById("fDate").value = s.date;
-      document.getElementById("fDuration").value = s.durationMin;
-      document.getElementById("fIntensity").value = s.intensity;
-      const existing = sessionSeries(s);
-      currentSeries = existing
-        ? existing.map(r=>({ reps:Number(r.reps), distanceM:Number(r.distanceM), stroke:r.stroke }))
-        : (s.distanceM ? [{ reps:1, distanceM:Number(s.distanceM), stroke:"crawl" }] : []);
-    } else {
-      form.reset();
-      document.getElementById("fDate").value = toISO(new Date());
-      document.getElementById("fIntensity").value = 2;
-      if(state.selected!=="all") document.getElementById("fSwimmer").value = state.selected;
-      currentSeries = [{ reps:4, distanceM:100, stroke:"crawl" }];
-    }
-    renderSeriesRows();
-    overlay.classList.add("open");
-  }
-  function closeModal(){ overlay.classList.remove("open"); }
-
   // ---- attendance modal ----
   const attendanceOverlay = document.getElementById("attendanceOverlay");
   const attendanceForm = document.getElementById("attendanceForm");
@@ -1671,14 +1580,23 @@
       const t = state.trainings.find(x=>x.id===editId);
       document.getElementById("aDate").value = t.date;
       document.getElementById("aLabel").value = t.label || "";
+      document.getElementById("fDuration").value = t.durationMin || "";
+      document.getElementById("fIntensity").value = t.intensity || 2;
+      const existing = sessionSeries(t);
+      currentSeries = existing
+        ? existing.map(r=>({ reps:Number(r.reps), distanceM:Number(r.distanceM), stroke:r.stroke }))
+        : (t.distanceM ? [{ reps:1, distanceM:Number(t.distanceM), stroke:"crawl" }] : []);
       currentAttendance = {};
       attendanceForTraining(editId).forEach(r=>{ currentAttendance[r.swimmerId] = r.present; });
     } else {
       attendanceForm.reset();
       document.getElementById("aDate").value = toISO(new Date());
+      document.getElementById("fIntensity").value = 2;
+      currentSeries = [{ reps:4, distanceM:100, stroke:"crawl" }];
       currentAttendance = {};
       state.swimmers.filter(sw=>sw.teamId===state.selectedTeam).forEach(sw=>{ currentAttendance[sw.id] = true; });
     }
+    renderSeriesRows();
     renderPresenceList();
     attendanceOverlay.classList.add("open");
   }
@@ -1694,10 +1612,15 @@
   attendanceForm.addEventListener("submit", async (e)=>{
     e.preventDefault();
     const editId = document.getElementById("attendanceId").value || null;
+    const validSeries = currentSeries.filter(r=>Number(r.reps)>0 && Number(r.distanceM)>0);
     const data = {
       date: document.getElementById("aDate").value,
       label: document.getElementById("aLabel").value.trim(),
-      teamId: state.selectedTeam
+      teamId: state.selectedTeam,
+      durationMin: Number(document.getElementById("fDuration").value),
+      intensity: Number(document.getElementById("fIntensity").value),
+      series: validSeries,
+      distanceM: validSeries.reduce((a,r)=>a+Number(r.reps)*Number(r.distanceM),0)
     };
     try{
       await saveTraining(data, currentAttendance, editId);
@@ -1913,53 +1836,6 @@
   document.querySelectorAll("#modeTabs button").forEach(btn=>{
     btn.onclick = () => { state.mode = btn.dataset.mode; render(); };
   });
-
-  document.getElementById("openAddSession").onclick = () => {
-    if(teamSwimmers().length===0){ showToast("Ajoutez d'abord un nageur à cette équipe.", true); return; }
-    openSessionModal(null);
-  };
-  document.getElementById("cancelSession").onclick = closeModal;
-  overlay.addEventListener("click", e=>{ if(e.target===overlay) closeModal(); });
-
-  form.addEventListener("submit", async (e)=>{
-    e.preventDefault();
-    const editId = document.getElementById("sessionId").value || null;
-    const validSeries = currentSeries.filter(r=>Number(r.reps)>0 && Number(r.distanceM)>0);
-    if(!validSeries.length){ showToast("Ajoutez au moins une série valide (répétitions et distance).", true); return; }
-    const data = {
-      swimmerId: document.getElementById("fSwimmer").value,
-      date: document.getElementById("fDate").value,
-      durationMin: Number(document.getElementById("fDuration").value),
-      intensity: Number(document.getElementById("fIntensity").value),
-      series: validSeries,
-      distanceM: validSeries.reduce((a,r)=>a+Number(r.reps)*Number(r.distanceM),0)
-    };
-    try{
-      await saveSession(data, editId);
-      closeModal();
-    }catch(err){
-      showToast("Impossible d'enregistrer la séance : " + (err && err.message ? err.message : err), true);
-    }
-  });
-  const deleteSessionBtn = document.getElementById("deleteSessionBtn");
-  deleteSessionBtn.onclick = async () => {
-    const id = document.getElementById("sessionId").value;
-    if(!id) return;
-    if(deleteSessionBtn.dataset.confirming==="true"){
-      deleteSessionBtn.dataset.confirming = "false";
-      await deleteSession(id);
-      closeModal();
-    } else {
-      deleteSessionBtn.dataset.confirming = "true";
-      deleteSessionBtn.textContent = "Confirmer la suppression";
-      setTimeout(()=>{
-        if(deleteSessionBtn.dataset.confirming==="true"){
-          deleteSessionBtn.dataset.confirming = "false";
-          deleteSessionBtn.textContent = "Supprimer";
-        }
-      }, 3000);
-    }
-  };
 
   document.getElementById("addTeamForm").addEventListener("submit", async (e)=>{
     e.preventDefault();
