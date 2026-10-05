@@ -190,6 +190,7 @@
   .total-dist { font-size: 13px; color: var(--ink-dim); margin: 4px 0 14px; }
   .total-dist span { color: var(--ink); font-weight: 600; }
 
+  .series-row .series-note { grid-column: 1 / -1; font-size: 12px; }
   .presence-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 2px; border-bottom: 1px solid var(--line); font-size: 13px; gap: 10px; }
   .presence-row:last-child { border-bottom: none; }
   .presence-toggle { display: flex; gap: 4px; flex-shrink: 0; }
@@ -292,6 +293,7 @@
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
         <h2 id="journalTitle" style="margin:0;">Journal des entraînements</h2>
         <button class="primary-btn" id="openAddTraining" style="display:none;">+ Nouvel entraînement</button>
+        <button class="primary-btn" id="openAddPresence" style="display:none;">+ Saisir les présences</button>
         <button class="primary-btn" id="openAddCompetition" style="display:none;">+ Nouvelle compétition</button>
         <button class="ghost-btn" id="openImportExtranat" style="display:none;">⇩ Importer Extranat</button>
       </div>
@@ -332,19 +334,47 @@
         <select id="fIntensity" required></select>
       </div>
       <div class="field">
-        <label>Séries (communes au groupe)</label>
+        <label>Séries / exercices (communs au groupe) — une note possible par série</label>
         <div class="series-list" id="seriesList"></div>
         <button type="button" class="add-series-btn" id="addSeriesBtn">+ Ajouter une série</button>
         <div class="total-dist">Distance totale : <span id="totalDistDisplay">0 m</span></div>
       </div>
       <div class="field">
-        <label>Présence</label>
-        <div id="presenceList" style="max-height:280px;overflow-y:auto;"></div>
+        <label>Note de l'entraînement (consignes, objectifs…)</label>
+        <textarea id="aNote" rows="3" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:13px;font-family:inherit;resize:vertical;" placeholder="ex : travail de coulée, pas de palmes sur la série de 50"></textarea>
       </div>
       <div class="modal-actions">
         <button type="button" class="link-btn" id="deleteTrainingBtn" style="display:none;">Supprimer</button>
         <div class="btn-group" style="margin-left:auto;">
           <button type="button" class="ghost-btn" id="cancelAttendance">Annuler</button>
+          <button type="submit" class="primary-btn">Enregistrer</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="overlay" id="presenceOverlay">
+  <div class="modal">
+    <h3 id="presenceModalTitle">Saisir les présences</h3>
+    <form id="presenceForm">
+      <input type="hidden" id="presenceEditDate">
+      <div class="field">
+        <label>Date</label>
+        <input type="date" id="pDate" required>
+      </div>
+      <div class="field">
+        <label>Présence</label>
+        <div style="display:flex;gap:6px;margin-bottom:8px;">
+          <button type="button" class="ghost-btn" id="allPresentBtn" style="padding:4px 10px;font-size:12px;">Tous présents</button>
+          <button type="button" class="ghost-btn" id="allAbsentBtn" style="padding:4px 10px;font-size:12px;">Tous absents</button>
+        </div>
+        <div id="presenceDayList" style="max-height:320px;overflow-y:auto;"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="link-btn" id="deletePresenceBtn" style="display:none;">Supprimer</button>
+        <div class="btn-group" style="margin-left:auto;">
+          <button type="button" class="ghost-btn" id="cancelPresence">Annuler</button>
           <button type="submit" class="primary-btn">Enregistrer</button>
         </div>
       </div>
@@ -516,8 +546,8 @@
 
   function rowToTeam(r){ return { id:r.id, name:r.name, createdAt:r.created_at }; }
   function rowToSwimmer(r){ return { id:r.id, name:r.name, teamId:r.team_id, createdAt:r.created_at }; }
-  function rowToTraining(r){ return { id:r.id, teamId:r.team_id, date:r.date, label:r.label, durationMin:r.duration_min, intensity:r.intensity, series:r.series, distanceM:r.distance_m }; }
-  function rowToAttendance(r){ return { id:r.id, trainingId:r.training_id, swimmerId:r.swimmer_id, present:r.present }; }
+  function rowToTraining(r){ return { id:r.id, teamId:r.team_id, date:r.date, label:r.label, durationMin:r.duration_min, intensity:r.intensity, note:r.note, series:r.series, distanceM:r.distance_m }; }
+  function rowToAttendance(r){ return { id:r.id, teamId:r.team_id, date:r.date, swimmerId:r.swimmer_id, present:r.present }; }
   function rowToCompetition(r){ return { id:r.id, teamId:r.team_id, date:r.date, name:r.name, course:r.course }; }
   function rowToResult(r){ return { id:r.id, competitionId:r.competition_id, swimmerId:r.swimmer_id, event:r.event, timeCs:r.time_cs }; }
 
@@ -583,32 +613,59 @@
     await fetchAll();
   }
 
-  async function saveTraining(data, attendanceMap, editId){
+  // Présence = un pointage par équipe, par jour et par nageur (indépendant des entraînements).
+  function normalizedAttendance(){
+    return state.attendance
+      .filter(a=>a.date && a.teamId)
+      .map(a=>({ id:a.id, teamId:a.teamId, date:a.date, swimmerId:a.swimmerId, present:!!a.present }));
+  }
+  let presenceIndex = null;
+  function buildPresenceIndex(){
+    const idx = new Map();
+    normalizedAttendance().forEach(a=>{
+      const key = a.teamId+"|"+a.date;
+      if(!idx.has(key)) idx.set(key, {});
+      const m = idx.get(key);
+      m[a.swimmerId] = (m[a.swimmerId]===true) || a.present;
+    });
+    presenceIndex = idx;
+    return idx;
+  }
+  function presenceFor(teamId, date){
+    const idx = presenceIndex || buildPresenceIndex();
+    return idx.get(teamId+"|"+date) || {};
+  }
+
+  async function saveTraining(data, editId){
     const row = {
       team_id: data.teamId, date: data.date, label: data.label||null,
-      duration_min: data.durationMin, intensity: data.intensity,
+      duration_min: data.durationMin, intensity: data.intensity, note: data.note||null,
       series: data.series, distance_m: data.distanceM
     };
-    let trainingId = editId;
-    if(editId){
-      const { error } = await supabase.from("trainings").update(row).eq("id", editId);
-      if(error) throw error;
-      const { error: delErr } = await supabase.from("attendance").delete().eq("training_id", editId);
-      if(delErr) throw delErr;
-    } else {
-      const { data: inserted, error } = await supabase.from("trainings").insert(row).select().single();
-      if(error) throw error;
-      trainingId = inserted.id;
-    }
-    const attendanceRows = Object.keys(attendanceMap).map(swId=>({ training_id: trainingId, swimmer_id: swId, present: !!attendanceMap[swId] }));
-    if(attendanceRows.length){
-      const { error } = await supabase.from("attendance").insert(attendanceRows);
-      if(error) throw error;
-    }
+    const { error } = editId
+      ? await supabase.from("trainings").update(row).eq("id", editId)
+      : await supabase.from("trainings").insert(row);
+    if(error) throw error;
     await fetchAll();
   }
   async function deleteTraining(id){
     const { error } = await supabase.from("trainings").delete().eq("id", id);
+    if(error) throw error;
+    await fetchAll();
+  }
+
+  async function savePresence(teamId, date, map){
+    const { error: delErr } = await supabase.from("attendance").delete().eq("team_id", teamId).eq("date", date);
+    if(delErr) throw delErr;
+    const rows = Object.keys(map).map(swId=>({ team_id: teamId, date, swimmer_id: swId, present: !!map[swId] }));
+    if(rows.length){
+      const { error } = await supabase.from("attendance").insert(rows);
+      if(error) throw error;
+    }
+    await fetchAll();
+  }
+  async function deletePresenceDay(teamId, date){
+    const { error } = await supabase.from("attendance").delete().eq("team_id", teamId).eq("date", date);
     if(error) throw error;
     await fetchAll();
   }
@@ -730,10 +787,21 @@
   }
 
   function trainingsAttendedBy(trainings, swimmerId){
-    return trainings.filter(t=>{
-      const rec = state.attendance.find(a=>a.trainingId===t.id && a.swimmerId===swimmerId);
-      return rec && rec.present;
+    return trainings.filter(t=> presenceFor(t.teamId, t.date)[swimmerId]===true);
+  }
+
+  function filteredPresenceDays(){
+    const { start, end } = periodRange(state.period, state.anchor);
+    if(!presenceIndex) buildPresenceIndex();
+    const days = [];
+    presenceIndex.forEach((map, key)=>{
+      const sep = key.indexOf("|");
+      const teamId = key.slice(0, sep), date = key.slice(sep+1);
+      if(teamId!==state.selectedTeam) return;
+      const d = parseISO(date);
+      if(d>=start && d<end) days.push({ teamId, date });
     });
+    return days.sort((a,b)=> a.date < b.date ? 1 : -1);
   }
 
   // ---- attendance helpers ----
@@ -831,37 +899,38 @@
     });
     return Object.values(byKey).sort((a,b)=>a.date<b.date?-1:1);
   }
-  function attendanceForTraining(trainingId){
-    return state.attendance.filter(a=>a.trainingId===trainingId);
-  }
-  function trainingStats(t){
-    const recs = attendanceForTraining(t.id);
-    const present = recs.filter(r=>r.present).length;
-    const total = recs.length;
+  function dayStats(day){
+    const map = presenceFor(day.teamId, day.date);
+    const ids = Object.keys(map);
+    const present = ids.filter(id=>map[id]).length;
+    const total = ids.length;
     return { present, total, rate: total ? present/total : null };
   }
+  function trainingStats(t){ return dayStats({ teamId:t.teamId, date:t.date }); }
   function rateColor(rate){
     if(rate==null) return { bg:"var(--surface-2)", fg:"var(--ink-dim)", bar:"var(--line)" };
     if(rate>=0.8) return { bg:"#C8E6C9", fg:"#1B5E20", bar:"#2E9E7B" };
     if(rate>=0.5) return { bg:"#FCEBC0", fg:"#8A6D1B", bar:"#F2B134" };
     return { bg:"#F4CCC7", fg:"#8B2E22", bar:"#E2725B" };
   }
-  function periodAttendanceRate(trainings, swimmerId){
+  function periodAttendanceRate(days, swimmerId){
     let present=0, total=0;
-    trainings.forEach(t=>{
-      const recs = attendanceForTraining(t.id);
-      const filtered = swimmerId ? recs.filter(r=>r.swimmerId===swimmerId) : recs;
-      present += filtered.filter(r=>r.present).length;
-      total += filtered.length;
+    days.forEach(day=>{
+      const map = presenceFor(day.teamId, day.date);
+      if(swimmerId){
+        if(swimmerId in map){ total++; if(map[swimmerId]) present++; }
+      } else {
+        Object.keys(map).forEach(id=>{ total++; if(map[id]) present++; });
+      }
     });
     return total ? present/total : null;
   }
-  function swimmerAttendanceRates(trainings){
+  function swimmerAttendanceRates(days){
     return teamSwimmers().map(sw=>{
       let present=0, total=0;
-      trainings.forEach(t=>{
-        const rec = state.attendance.find(a=>a.trainingId===t.id && a.swimmerId===sw.id);
-        if(rec){ total++; if(rec.present) present++; }
+      days.forEach(day=>{
+        const map = presenceFor(day.teamId, day.date);
+        if(sw.id in map){ total++; if(map[sw.id]) present++; }
       });
       return { swimmer: sw, present, total, rate: total ? present/total : null };
     }).filter(e=>e.total>0);
@@ -869,16 +938,17 @@
 
   // ---- rendering ----
   function render(){
+    presenceIndex = null;
     renderTeamList();
     renderSidebar();
     renderModeTabs();
     renderTopbar();
     if(state.mode==="attendance"){
-      const trainings = filteredTrainings();
-      renderAttendanceStats(trainings);
-      renderAttendanceChart(trainings);
-      renderAttendanceBreakdown(trainings);
-      renderAttendanceTable(trainings);
+      const days = filteredPresenceDays();
+      renderAttendanceStats(days);
+      renderAttendanceChart(days);
+      renderAttendanceBreakdown(days);
+      renderAttendanceTable(days);
     } else if(state.mode==="competition"){
       const competitions = filteredCompetitions();
       const analysisComps = competitions.filter(c=>(c.course||"25")===state.selectedCourse);
@@ -901,14 +971,15 @@
     document.querySelectorAll("#modeTabs button").forEach(b=>{
       b.classList.toggle("active", b.dataset.mode===state.mode);
     });
-    document.getElementById("openAddTraining").style.display = (state.mode==="attendance" || state.mode==="training") ? "inline-block" : "none";
+    document.getElementById("openAddTraining").style.display = state.mode==="training" ? "inline-block" : "none";
+    document.getElementById("openAddPresence").style.display = state.mode==="attendance" ? "inline-block" : "none";
     document.getElementById("openAddCompetition").style.display = state.mode==="competition" ? "inline-block" : "none";
     document.getElementById("openImportExtranat").style.display = state.mode==="competition" ? "inline-block" : "none";
     document.getElementById("eventSelect").style.display = state.mode==="competition" ? "inline-block" : "none";
     document.getElementById("courseSelect").style.display = state.mode==="competition" ? "inline-block" : "none";
     const titles = {
       training: ["Journal des entraînements", "Répartition par nage"],
-      attendance: ["Historique des entraînements", "Présence par nageur"],
+      attendance: ["Historique des présences", "Présence par nageur"],
       competition: ["Historique des compétitions", "Classement — épreuve"]
     };
     const t = titles[state.mode];
@@ -1163,34 +1234,36 @@
     }).join("");
   }
 
-  function renderAttendanceStats(trainings){
+  function renderAttendanceStats(days){
     const row = document.getElementById("statRow");
-    const nbTrainings = trainings.length;
+    const nbDays = days.length;
     let cards;
     if(state.selected==="all"){
-      const rate = periodAttendanceRate(trainings, null);
-      const swRates = swimmerAttendanceRates(trainings).sort((a,b)=>(b.rate??-1)-(a.rate??-1));
+      const rate = periodAttendanceRate(days, null);
+      const swRates = swimmerAttendanceRates(days).sort((a,b)=>(b.rate??-1)-(a.rate??-1));
       const best = swRates[0], worst = swRates.length>1 ? swRates[swRates.length-1] : null;
-      const totalRecs = trainings.reduce((a,t)=>a+attendanceForTraining(t.id).length,0);
-      const presentRecs = trainings.reduce((a,t)=>a+attendanceForTraining(t.id).filter(r=>r.present).length,0);
+      let totalRecs = 0, presentRecs = 0;
+      days.forEach(d=>{ const st = dayStats(d); totalRecs += st.total; presentRecs += st.present; });
       cards = [
-        { label:"Taux de présence équipe", value: rate!=null ? Math.round(rate*100)+"%" : "—", sub: nbTrainings+" entraînement"+(nbTrainings>1?"s":"") },
-        { label:"Entraînements", value: nbTrainings, sub:"sur la période" },
+        { label:"Taux de présence équipe", value: rate!=null ? Math.round(rate*100)+"%" : "—", sub: nbDays+" jour"+(nbDays>1?"s":"")+" pointé"+(nbDays>1?"s":"") },
+        { label:"Jours pointés", value: nbDays, sub:"sur la période" },
         { label:"Présences totales", value: presentRecs, sub:"sur "+totalRecs },
         { label:"Meilleure présence", value: best ? best.swimmer.name : "—", sub: best && best.rate!=null ? Math.round(best.rate*100)+"%" : "" },
         { label:"Moins présent(e)", value: worst ? worst.swimmer.name : "—", sub: worst && worst.rate!=null ? Math.round(worst.rate*100)+"%" : "" }
       ];
     } else {
       const sw = swimmerOf(state.selected);
-      const rate = periodAttendanceRate(trainings, state.selected);
-      const recs = trainings.map(t=>state.attendance.find(a=>a.trainingId===t.id && a.swimmerId===state.selected)).filter(Boolean);
-      const present = recs.filter(r=>r.present).length;
-      const total = recs.length;
-      const swRates = swimmerAttendanceRates(trainings).sort((a,b)=>(b.rate??-1)-(a.rate??-1));
+      const rate = periodAttendanceRate(days, state.selected);
+      let present = 0, total = 0;
+      days.forEach(d=>{
+        const map = presenceFor(d.teamId, d.date);
+        if(state.selected in map){ total++; if(map[state.selected]) present++; }
+      });
+      const swRates = swimmerAttendanceRates(days).sort((a,b)=>(b.rate??-1)-(a.rate??-1));
       const rankIdx = swRates.findIndex(e=>e.swimmer.id===state.selected);
       cards = [
         { label:"Taux de présence", value: rate!=null ? Math.round(rate*100)+"%" : "—", sub: sw ? sw.name : "" },
-        { label:"Entraînements", value: nbTrainings, sub:"sur la période" },
+        { label:"Jours pointés", value: total, sub:"sur la période" },
         { label:"Présences", value: present, sub:"sur "+total },
         { label:"Absences", value: total-present, sub:"" },
         { label:"Rang dans l'équipe", value: rankIdx>-1 ? (rankIdx+1)+"/"+swRates.length : "—", sub:"sur la période" }
@@ -1205,16 +1278,16 @@
     });
   }
 
-  function renderAttendanceChart(trainings){
+  function renderAttendanceChart(days){
     const { start, end } = periodRange(state.period, state.anchor);
     const labels = bucketLabels(state.period, start, end);
     const buckets = new Array(labels.length).fill(null).map(()=>[]);
-    trainings.forEach(t=>{
-      const idx = bucketIndex(state.period, parseISO(t.date), start);
-      if(idx>=0 && idx<buckets.length) buckets[idx].push(t);
+    days.forEach(day=>{
+      const idx = bucketIndex(state.period, parseISO(day.date), start);
+      if(idx>=0 && idx<buckets.length) buckets[idx].push(day);
     });
     const swimmerId = state.selected==="all" ? null : state.selected;
-    const values = buckets.map(ts => ts.length ? periodAttendanceRate(ts, swimmerId) : null);
+    const values = buckets.map(ds => ds.length ? periodAttendanceRate(ds, swimmerId) : null);
     const svg = document.getElementById("chart");
     const W = Math.max(700, labels.length*70), H = 180;
     svg.setAttribute("viewBox", "0 0 "+W+" "+H);
@@ -1236,15 +1309,15 @@
     document.getElementById("chartTitle").textContent = "Évolution de la présence" + (state.selected!=="all" && swimmerOf(state.selected) ? " — "+swimmerOf(state.selected).name : "");
   }
 
-  function renderAttendanceBreakdown(trainings){
+  function renderAttendanceBreakdown(days){
     const container = document.getElementById("strokeBars");
     if(state.selected!=="all"){
       container.innerHTML = '<div class="empty">Sélectionnez « Tous les nageurs » pour comparer les nageurs.</div>';
       return;
     }
-    const entries = swimmerAttendanceRates(trainings).sort((a,b)=>(b.rate??-1)-(a.rate??-1));
+    const entries = swimmerAttendanceRates(days).sort((a,b)=>(b.rate??-1)-(a.rate??-1));
     if(!entries.length){
-      container.innerHTML = '<div class="empty">Aucun entraînement enregistré sur cette période.</div>';
+      container.innerHTML = '<div class="empty">Aucune présence enregistrée sur cette période.</div>';
       return;
     }
     container.innerHTML = entries.map(e => {
@@ -1258,28 +1331,30 @@
     }).join("");
   }
 
-  function renderAttendanceTable(trainings){
+  function renderAttendanceTable(days){
     const head = document.getElementById("tableHead");
-    head.innerHTML = '<tr><th>Date</th><th>Libellé</th><th>Présents</th><th>Taux</th><th></th></tr>';
+    head.innerHTML = '<tr><th>Date</th><th>Présents</th><th>Absents</th><th>Taux</th><th></th></tr>';
     const body = document.getElementById("sessionBody");
     body.innerHTML = "";
-    document.getElementById("emptyMsg").style.display = trainings.length ? "none" : "block";
-    document.getElementById("emptyMsg").textContent = "Aucun entraînement sur cette période.";
-    trainings.forEach(t=>{
-      const stats = trainingStats(t);
+    document.getElementById("emptyMsg").style.display = days.length ? "none" : "block";
+    document.getElementById("emptyMsg").textContent = "Aucune présence enregistrée sur cette période.";
+    days.forEach(day=>{
+      const stats = dayStats(day);
+      const map = presenceFor(day.teamId, day.date);
+      const absents = Object.keys(map).filter(id=>!map[id]).map(id=>swimmerOf(id)).filter(Boolean).map(sw=>escapeHtml(sw.name));
       const c = rateColor(stats.rate);
-      const d = parseISO(t.date);
+      const d = parseISO(day.date);
       const tr = document.createElement("tr");
       tr.innerHTML =
         '<td class="mono">'+pad(d.getDate())+"/"+pad(d.getMonth()+1)+"/"+d.getFullYear()+'</td>'+
-        '<td>'+(t.label ? escapeHtml(t.label) : "—")+'</td>'+
         '<td class="mono">'+stats.present+' / '+stats.total+'</td>'+
+        '<td>'+(absents.length ? absents.join(", ") : "—")+'</td>'+
         '<td><span class="rate-chip" style="background:'+c.bg+';color:'+c.fg+'">'+(stats.rate!=null?Math.round(stats.rate*100)+"%":"—")+'</span></td>'+
-        '<td class="row-actions"><button data-edit-training="'+t.id+'">Modifier</button></td>';
+        '<td class="row-actions"><button data-edit-presence="'+day.date+'">Modifier</button></td>';
       body.appendChild(tr);
     });
-    body.querySelectorAll("[data-edit-training]").forEach(btn=>{
-      btn.onclick = () => openAttendanceModal(btn.dataset.editTraining);
+    body.querySelectorAll("[data-edit-presence]").forEach(btn=>{
+      btn.onclick = () => openPresenceModal(btn.dataset.editPresence);
     });
   }
 
@@ -1441,9 +1516,23 @@
   }
 
 
+  function trainingNotesHtml(t){
+    const parts = [];
+    if(t.note) parts.push('<div>'+escapeHtml(t.note)+'</div>');
+    const ser = sessionSeries(t);
+    if(ser){
+      ser.forEach(r=>{
+        if(r.note){
+          parts.push('<div style="color:var(--ink-dim);font-size:12px;">'+r.reps+'×'+r.distanceM+' m '+strokeOf(r.stroke).name+' — '+escapeHtml(r.note)+'</div>');
+        }
+      });
+    }
+    return parts.length ? parts.join("") : "—";
+  }
+
   function renderTable(trainings){
     const head = document.getElementById("tableHead");
-    head.innerHTML = '<tr><th>Date</th><th>Libellé</th><th>Durée</th><th>Intensité</th><th>Nage</th><th>Distance</th><th>Présents</th><th></th></tr>';
+    head.innerHTML = '<tr><th>Date</th><th>Libellé</th><th>Durée</th><th>Intensité</th><th>Nage</th><th>Distance</th><th>Notes</th><th>Présents</th><th></th></tr>';
     const body = document.getElementById("sessionBody");
     body.innerHTML = "";
     document.getElementById("emptyMsg").style.display = trainings.length ? "none" : "block";
@@ -1460,12 +1549,13 @@
         '<td><span class="zone-chip"><span class="zone-dot" style="background:'+z.color+'"></span>'+z.name+'</span></td>'+
         '<td>'+sessionStrokeNames(t)+'</td>'+
         '<td class="mono">'+sessionDistance(t).toLocaleString("fr-FR")+' m</td>'+
-        '<td class="mono">'+stats.present+' / '+stats.total+'</td>'+
+        '<td style="max-width:260px;">'+trainingNotesHtml(t)+'</td>'+
+        '<td class="mono">'+(stats.total ? stats.present+' / '+stats.total : "—")+'</td>'+
         '<td class="row-actions"><button data-edit="'+t.id+'">Modifier</button></td>';
       body.appendChild(tr);
     });
     body.querySelectorAll("[data-edit]").forEach(btn=>{
-      btn.onclick = () => openAttendanceModal(btn.dataset.edit);
+      btn.onclick = () => openTrainingModal(btn.dataset.edit);
     });
   }
 
@@ -1508,7 +1598,8 @@
         '<input type="number" min="1" step="1" value="'+row.reps+'" data-field="reps" data-idx="'+i+'" placeholder="x">'+
         '<input type="number" min="0" step="25" value="'+row.distanceM+'" data-field="distanceM" data-idx="'+i+'" placeholder="m">'+
         '<select data-field="stroke" data-idx="'+i+'"></select>'+
-        '<button type="button" class="rm-series" data-rm="'+i+'" title="Retirer">✕</button>';
+        '<button type="button" class="rm-series" data-rm="'+i+'" title="Retirer">✕</button>'+
+        '<input type="text" class="series-note" data-field="note" data-idx="'+i+'" value="'+escapeHtml(row.note||"")+'" placeholder="Note sur cet exercice (ex : jambes avec planche)">';
       list.appendChild(div);
       const sel = div.querySelector("select");
       STROKES.forEach(st=>{
@@ -1530,7 +1621,7 @@
   function onSeriesFieldChange(e){
     const idx = Number(e.target.dataset.idx);
     const field = e.target.dataset.field;
-    currentSeries[idx][field] = field==="stroke" ? e.target.value : Number(e.target.value);
+    currentSeries[idx][field] = (field==="stroke" || field==="note") ? e.target.value : Number(e.target.value);
     updateTotalDist();
   }
   function updateTotalDist(){
@@ -1538,39 +1629,15 @@
     document.getElementById("totalDistDisplay").textContent = total.toLocaleString("fr-FR")+" m";
   }
   document.getElementById("addSeriesBtn").onclick = () => {
-    currentSeries.push({ reps:4, distanceM:100, stroke:"crawl" });
+    currentSeries.push({ reps:4, distanceM:100, stroke:"crawl", note:"" });
     renderSeriesRows();
   };
 
-  // ---- attendance modal ----
-  const attendanceOverlay = document.getElementById("attendanceOverlay");
-  const attendanceForm = document.getElementById("attendanceForm");
-  let currentAttendance = {};
+  // ---- training modal (volume, exercices, notes) ----
+  const trainingOverlay = document.getElementById("attendanceOverlay");
+  const trainingForm = document.getElementById("attendanceForm");
 
-  function renderPresenceList(){
-    const list = document.getElementById("presenceList");
-    const swimmers = teamSwimmers();
-    if(swimmers.length===0){
-      list.innerHTML = '<div class="empty">Ajoutez d\'abord des nageurs.</div>';
-      return;
-    }
-    list.innerHTML = swimmers.map(sw=>{
-      const present = currentAttendance[sw.id] !== false;
-      return '<div class="presence-row"><span>'+escapeHtml(sw.name)+'</span>'+
-        '<div class="presence-toggle">'+
-        '<button type="button" data-swimmer="'+sw.id+'" data-val="true" class="'+(present?"active-present":"")+'">Présent</button>'+
-        '<button type="button" data-swimmer="'+sw.id+'" data-val="false" class="'+(!present?"active-absent":"")+'">Absent</button>'+
-        '</div></div>';
-    }).join("");
-    list.querySelectorAll("button[data-swimmer]").forEach(btn=>{
-      btn.onclick = () => {
-        currentAttendance[btn.dataset.swimmer] = btn.dataset.val === "true";
-        renderPresenceList();
-      };
-    });
-  }
-
-  function openAttendanceModal(editId){
+  function openTrainingModal(editId){
     document.getElementById("attendanceModalTitle").textContent = editId ? "Modifier l'entraînement" : "Nouvel entraînement";
     document.getElementById("deleteTrainingBtn").style.display = editId ? "inline-block" : "none";
     document.getElementById("deleteTrainingBtn").textContent = "Supprimer";
@@ -1582,49 +1649,46 @@
       document.getElementById("aLabel").value = t.label || "";
       document.getElementById("fDuration").value = t.durationMin || "";
       document.getElementById("fIntensity").value = t.intensity || 2;
+      document.getElementById("aNote").value = t.note || "";
       const existing = sessionSeries(t);
       currentSeries = existing
-        ? existing.map(r=>({ reps:Number(r.reps), distanceM:Number(r.distanceM), stroke:r.stroke }))
-        : (t.distanceM ? [{ reps:1, distanceM:Number(t.distanceM), stroke:"crawl" }] : []);
-      currentAttendance = {};
-      attendanceForTraining(editId).forEach(r=>{ currentAttendance[r.swimmerId] = r.present; });
+        ? existing.map(r=>({ reps:Number(r.reps), distanceM:Number(r.distanceM), stroke:r.stroke, note:r.note||"" }))
+        : (t.distanceM ? [{ reps:1, distanceM:Number(t.distanceM), stroke:"crawl", note:"" }] : []);
     } else {
-      attendanceForm.reset();
+      trainingForm.reset();
       document.getElementById("aDate").value = toISO(new Date());
       document.getElementById("fIntensity").value = 2;
-      currentSeries = [{ reps:4, distanceM:100, stroke:"crawl" }];
-      currentAttendance = {};
-      state.swimmers.filter(sw=>sw.teamId===state.selectedTeam).forEach(sw=>{ currentAttendance[sw.id] = true; });
+      document.getElementById("aNote").value = "";
+      currentSeries = [{ reps:4, distanceM:100, stroke:"crawl", note:"" }];
     }
     renderSeriesRows();
-    renderPresenceList();
-    attendanceOverlay.classList.add("open");
+    trainingOverlay.classList.add("open");
   }
-  function closeAttendanceModal(){ attendanceOverlay.classList.remove("open"); }
+  function closeTrainingModal(){ trainingOverlay.classList.remove("open"); }
 
-  document.getElementById("openAddTraining").onclick = () => {
-    if(teamSwimmers().length===0){ showToast("Ajoutez d'abord un nageur à cette équipe.", true); return; }
-    openAttendanceModal(null);
-  };
-  document.getElementById("cancelAttendance").onclick = closeAttendanceModal;
-  attendanceOverlay.addEventListener("click", e=>{ if(e.target===attendanceOverlay) closeAttendanceModal(); });
+  document.getElementById("openAddTraining").onclick = () => openTrainingModal(null);
+  document.getElementById("cancelAttendance").onclick = closeTrainingModal;
+  trainingOverlay.addEventListener("click", e=>{ if(e.target===trainingOverlay) closeTrainingModal(); });
 
-  attendanceForm.addEventListener("submit", async (e)=>{
+  trainingForm.addEventListener("submit", async (e)=>{
     e.preventDefault();
     const editId = document.getElementById("attendanceId").value || null;
-    const validSeries = currentSeries.filter(r=>Number(r.reps)>0 && Number(r.distanceM)>0);
+    const validSeries = currentSeries
+      .filter(r=>Number(r.reps)>0 && Number(r.distanceM)>0)
+      .map(r=>({ reps:Number(r.reps), distanceM:Number(r.distanceM), stroke:r.stroke, note:(r.note||"").trim() }));
     const data = {
       date: document.getElementById("aDate").value,
       label: document.getElementById("aLabel").value.trim(),
       teamId: state.selectedTeam,
       durationMin: Number(document.getElementById("fDuration").value),
       intensity: Number(document.getElementById("fIntensity").value),
+      note: document.getElementById("aNote").value.trim(),
       series: validSeries,
-      distanceM: validSeries.reduce((a,r)=>a+Number(r.reps)*Number(r.distanceM),0)
+      distanceM: validSeries.reduce((a,r)=>a+r.reps*r.distanceM,0)
     };
     try{
-      await saveTraining(data, currentAttendance, editId);
-      closeAttendanceModal();
+      await saveTraining(data, editId);
+      closeTrainingModal();
     }catch(err){
       showToast("Impossible d'enregistrer l'entraînement : " + (err && err.message ? err.message : err), true);
     }
@@ -1636,7 +1700,7 @@
     if(deleteTrainingBtn.dataset.confirming==="true"){
       deleteTrainingBtn.dataset.confirming = "false";
       await deleteTraining(id);
-      closeAttendanceModal();
+      closeTrainingModal();
     } else {
       deleteTrainingBtn.dataset.confirming = "true";
       deleteTrainingBtn.textContent = "Confirmer la suppression";
@@ -1644,6 +1708,98 @@
         if(deleteTrainingBtn.dataset.confirming==="true"){
           deleteTrainingBtn.dataset.confirming = "false";
           deleteTrainingBtn.textContent = "Supprimer";
+        }
+      }, 3000);
+    }
+  };
+
+  // ---- presence modal (présent / absent uniquement) ----
+  const presenceOverlay = document.getElementById("presenceOverlay");
+  const presenceForm = document.getElementById("presenceForm");
+  let currentPresence = {};
+
+  function presenceDefaults(date){
+    const existing = presenceFor(state.selectedTeam, date);
+    const m = {};
+    teamSwimmers().forEach(sw=>{ m[sw.id] = (sw.id in existing) ? existing[sw.id] : true; });
+    return m;
+  }
+  function renderPresenceDayList(){
+    const list = document.getElementById("presenceDayList");
+    const swimmers = teamSwimmers();
+    if(swimmers.length===0){
+      list.innerHTML = '<div class="empty">Ajoutez d\'abord des nageurs.</div>';
+      return;
+    }
+    list.innerHTML = swimmers.map(sw=>{
+      const present = currentPresence[sw.id] !== false;
+      return '<div class="presence-row"><span>'+escapeHtml(sw.name)+'</span>'+
+        '<div class="presence-toggle">'+
+        '<button type="button" data-swimmer="'+sw.id+'" data-val="true" class="'+(present?"active-present":"")+'">Présent</button>'+
+        '<button type="button" data-swimmer="'+sw.id+'" data-val="false" class="'+(!present?"active-absent":"")+'">Absent</button>'+
+        '</div></div>';
+    }).join("");
+    list.querySelectorAll("button[data-swimmer]").forEach(btn=>{
+      btn.onclick = () => {
+        currentPresence[btn.dataset.swimmer] = btn.dataset.val === "true";
+        renderPresenceDayList();
+      };
+    });
+  }
+  function openPresenceModal(editDate){
+    document.getElementById("presenceModalTitle").textContent = editDate ? "Modifier les présences" : "Saisir les présences";
+    document.getElementById("deletePresenceBtn").style.display = editDate ? "inline-block" : "none";
+    document.getElementById("deletePresenceBtn").textContent = "Supprimer";
+    document.getElementById("deletePresenceBtn").dataset.confirming = "false";
+    document.getElementById("presenceEditDate").value = editDate || "";
+    const date = editDate || toISO(new Date());
+    document.getElementById("pDate").value = date;
+    currentPresence = presenceDefaults(date);
+    renderPresenceDayList();
+    presenceOverlay.classList.add("open");
+  }
+  function closePresenceModal(){ presenceOverlay.classList.remove("open"); }
+
+  document.getElementById("openAddPresence").onclick = () => {
+    if(teamSwimmers().length===0){ showToast("Ajoutez d'abord un nageur à cette équipe.", true); return; }
+    openPresenceModal(null);
+  };
+  document.getElementById("cancelPresence").onclick = closePresenceModal;
+  presenceOverlay.addEventListener("click", e=>{ if(e.target===presenceOverlay) closePresenceModal(); });
+  document.getElementById("pDate").addEventListener("change", e=>{
+    if(e.target.value){ currentPresence = presenceDefaults(e.target.value); renderPresenceDayList(); }
+  });
+  document.getElementById("allPresentBtn").onclick = () => { Object.keys(currentPresence).forEach(id=>{ currentPresence[id]=true; }); renderPresenceDayList(); };
+  document.getElementById("allAbsentBtn").onclick = () => { Object.keys(currentPresence).forEach(id=>{ currentPresence[id]=false; }); renderPresenceDayList(); };
+
+  presenceForm.addEventListener("submit", async (e)=>{
+    e.preventDefault();
+    const editDate = document.getElementById("presenceEditDate").value || null;
+    const date = document.getElementById("pDate").value;
+    if(!date) return;
+    try{
+      if(editDate && editDate!==date) await deletePresenceDay(state.selectedTeam, editDate);
+      await savePresence(state.selectedTeam, date, currentPresence);
+      closePresenceModal();
+    }catch(err){
+      showToast("Impossible d'enregistrer les présences : " + (err && err.message ? err.message : err), true);
+    }
+  });
+  const deletePresenceBtn = document.getElementById("deletePresenceBtn");
+  deletePresenceBtn.onclick = async () => {
+    const editDate = document.getElementById("presenceEditDate").value;
+    if(!editDate) return;
+    if(deletePresenceBtn.dataset.confirming==="true"){
+      deletePresenceBtn.dataset.confirming = "false";
+      await deletePresenceDay(state.selectedTeam, editDate);
+      closePresenceModal();
+    } else {
+      deletePresenceBtn.dataset.confirming = "true";
+      deletePresenceBtn.textContent = "Confirmer la suppression";
+      setTimeout(()=>{
+        if(deletePresenceBtn.dataset.confirming==="true"){
+          deletePresenceBtn.dataset.confirming = "false";
+          deletePresenceBtn.textContent = "Supprimer";
         }
       }, 3000);
     }
@@ -1898,28 +2054,29 @@
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(seancesData.length?seancesData:[{}]), "Séances");
 
     const trainingsData = state.trainings.map(t=>{
-      const st = trainingStats(t);
       return {
         "Équipe": teamName(t.teamId),
         "Date": t.date,
         "Libellé": t.label||"",
-        "Présents": st.present,
-        "Total": st.total,
-        "Taux (%)": st.rate!=null ? Math.round(st.rate*100) : ""
+        "Durée (min)": t.durationMin||0,
+        "Intensité": zoneOf(t.intensity).name,
+        "Nage(s)": sessionStrokeNames(t),
+        "Distance (m)": sessionDistance(t),
+        "Note": t.note||"",
+        "Notes par exercice": (sessionSeries(t)||[]).filter(r=>r.note).map(r=>r.reps+"x"+r.distanceM+" "+strokeOf(r.stroke).name+" : "+r.note).join(" | ")
       };
     }).sort((a,b)=> a.Date<b.Date?-1:1);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(trainingsData.length?trainingsData:[{}]), "Entraînements");
 
-    const presenceData = state.attendance.map(a=>{
-      const t = state.trainings.find(x=>x.id===a.trainingId);
+    const presenceData = normalizedAttendance().map(a=>{
       const sw = swimmerOf(a.swimmerId);
       return {
-        "Équipe": t ? teamName(t.teamId) : "—",
-        "Date entraînement": t?t.date:"—",
+        "Équipe": teamName(a.teamId),
+        "Date": a.date,
         "Nageur": sw?sw.name:"—",
         "Présent": a.present ? "Oui" : "Non"
       };
-    }).sort((a,b)=> (a["Date entraînement"]<b["Date entraînement"])?-1:1);
+    }).sort((a,b)=> a.Date<b.Date?-1:1);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(presenceData.length?presenceData:[{}]), "Présences");
 
     const resultsData = state.results.map(r=>{
