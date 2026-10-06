@@ -490,12 +490,15 @@
   function eventOf(k){ return EVENTS.find(e=>e.key===k) || EVENTS[0]; }
   function parseTime(str){
     if(!str) return null;
-    const s = str.trim().replace(",", ".");
-    const m = s.match(/^(?:(\d+):)?(\d{1,2}(?:\.\d{1,2})?)$/);
-    if(!m) return null;
-    const mins = m[1] ? parseInt(m[1],10) : 0;
-    const secs = parseFloat(m[2]);
-    return Math.round((mins*60+secs)*100);
+    const s = String(str).trim().replace(/[\s'"]+/g,"").replace(/[,;:\/]/g,".");
+    if(!/^\d+(\.\d+){0,2}$/.test(s)) return null;
+    const p = s.split(".");
+    let mins=0, secs=0, cs=0;
+    if(p.length===3){ mins=+p[0]; secs=+p[1]; cs=p[2].length===1? +p[2]*10 : +p[2].slice(0,2); }
+    else if(p.length===2){ secs=+p[0]; cs=p[1].length===1? +p[1]*10 : +p[1].slice(0,2); }
+    else { secs=+p[0]; }
+    if(secs>=60 && p.length===3) return null;
+    return mins*6000+secs*100+cs;
   }
   function formatTime(cs){
     if(cs==null || isNaN(cs)) return "—";
@@ -1822,7 +1825,7 @@
       div.innerHTML =
         '<select data-field="swimmerId" data-idx="'+i+'">'+swimmerOptions+'</select>'+
         '<select data-field="event" data-idx="'+i+'">'+eventOptions+'</select>'+
-        '<input type="text" data-field="timeStr" data-idx="'+i+'" placeholder="1:02.35" value="'+escapeHtml(row.timeStr||"")+'">'+
+        '<input type="text" data-field="timeStr" data-idx="'+i+'" placeholder="1:02.35 ou 01.02.35" value="'+escapeHtml(row.timeStr||"")+'">'+
         '<button type="button" class="rm-result" data-rm="'+i+'" title="Retirer">✕</button>';
       list.appendChild(div);
     });
@@ -1885,7 +1888,7 @@
       const cs = parseTime(r.timeStr);
       if(r.swimmerId && r.event && cs!=null) validResults.push({ swimmerId:r.swimmerId, event:r.event, timeCs:cs });
     }
-    if(!validResults.length){ showToast("Ajoutez au moins un résultat valide (temps au format mm:ss.cc).", true); return; }
+    if(!validResults.length){ showToast("Ajoutez au moins un résultat valide (ex. 1:02.35, 01.02.35 ou 41.67).", true); return; }
     const data = {
       date: document.getElementById("cDate").value,
       name: document.getElementById("cName").value.trim(),
